@@ -1,0 +1,411 @@
+// schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id               String    @id @default(uuid())
+  name             String
+  email            String    @unique
+  phone            String    @unique 
+  password         String
+  role             String    @default("USER") // 'USER', 'ADMIN', 'OWNER'
+  expoPushToken    String?   // Allows sending Push Notifications
+  resetToken       String?
+  resetTokenExpiry DateTime?
+  photo            String?
+  status           String    @default("ACTIVE") // 'ACTIVE', 'BLOCKED'
+  isVip            Boolean   @default(false)
+  loyaltyPoints    Int       @default(0)
+  walletBalance    Float     @default(0.0)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  addresses      Address[]
+  orders         Order[]
+  notifications  Notification[]
+  reviews        Review[]
+  favourites     Favourite[]
+  wallets        Wallet[]
+  supportTickets SupportTicket[]
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  body      String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Address {
+  id              String   @id @default(uuid())
+  userId          String
+  tag             String   // e.g. Home, Work, Other
+  city            String
+  area            String
+  completeAddress String
+  mapsLink        String?
+  receiverName    String?
+  receiverPhone   String?
+  isDefault       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders Order[]
+}
+
+model Category {
+  id        String    @id @default(uuid())
+  name      String
+  createdAt DateTime  @default(now())
+  
+  products  Product[]
+}
+
+model Product {
+  id               String   @id @default(uuid())
+  categoryId       String?
+  vendorId         String?
+  name             String
+  brand            String?
+  description      String?
+  img              String?  // Changed from imageUrl to img to match frontend
+  cat              String?  // Added cat string field for quick filtering
+  subTag           String?  // Added subTag for granular categorization
+  packSize         String?  // Added packSize for single-variant products
+  price            Float    @default(0.0) // Added price for single-variant products
+  isActive         Boolean  @default(true)
+  isTrending       Boolean  @default(false)
+  trendingPriority Int      @default(0)
+  trendingExpiry   DateTime?
+  sku              String?
+  barcode          String?
+  childCategory    String?
+  videoUrl         String?
+  pdfUrl           String?
+  createdAt        DateTime @default(now())
+
+  category  Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  vendor    Vendor?          @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  variants  ProductVariant[]
+  reviews   Review[]
+  favourites Favourite[]
+}
+
+model ProductVariant {
+  id            String   @id @default(uuid())
+  productId     String
+  packSize      String   // e.g., '250 gm', '500 gm', '1 kg'
+  price         Float
+  stockQuantity Int      @default(0)
+  
+  product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  userId    String
+  productId String
+  rating    Int      // 1 to 5
+  comment   String?
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model PromoCode {
+  id             String   @id @default(uuid())
+  code           String   @unique
+  discountAmount Float
+  minOrderValue  Float    @default(0.0) // E.g. Valid only on orders > 500
+  isActive       Boolean  @default(true)
+  
+  orders         Order[]
+}
+
+model Order {
+  id             String   @id @default(uuid())
+  userId         String
+  addressId      String
+  promoId        String?
+  vendorId       String?
+  
+  status         String   @default("Preparing")
+  paymentMethod  String   // 'COD', 'UPI', 'CARD', 'WALLET'
+  paymentStatus  String   @default("PENDING") // 'PENDING', 'SUCCESS', 'FAILED'
+  
+  itemTotal      Float
+  deliveryFee    Float    @default(0.0)
+  discountAmount Float    @default(0.0)
+  grandTotal     Float
+  
+  invoiceUrl     String?  // PDF URL link for Tax Invoice
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user               User       @relation(fields: [userId], references: [id])
+  address            Address    @relation(fields: [addressId], references: [id])
+  promoCode          PromoCode? @relation(fields: [promoId], references: [id])
+  vendor             Vendor?    @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  orderItems         OrderItem[]
+  deliveryAssignment DeliveryAssignment?
+  statusHistory      OrderStatusHistory[]
+}
+
+model OrderItem {
+  id               String   @id @default(uuid())
+  orderId          String
+  productVariantId String
+  quantity         Int
+  priceAtTime      Float
+
+  createdAt        DateTime @default(now())
+
+  order          Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productVariant ProductVariant @relation(fields: [productVariantId], references: [id])
+}
+
+model Favourite {
+  id        String   @id @default(uuid())
+  userId    String
+  productId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+}
+
+model PaymentMethod {
+  id        String   @id @default(uuid())
+  type      String   // 'UPI', 'CARD', 'COD', 'WALLET'
+  name      String   // 'Google Pay', 'Credit Card', 'Cash on Delivery'
+  detail    String?  // e.g. 'user@okaxis' or '**** 4532'
+  icon      String?  // Emoji or Icon name
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model Banner {
+  id        String   @id @default(uuid())
+  title     String
+  subtitle  String?
+  imageUrl  String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+// --- DELIVERY PARTNER ECOSYSTEM ---
+
+model DeliveryPartner {
+  id                 String               @id @default(uuid())
+  name               String
+  phone              String               @unique
+  email              String               @unique
+  password           String
+  dob                String?
+  gender             String?
+  address            String?
+  avatar             String?              // Profile Photo URL
+  
+  // KYC Verification Status
+  verificationStatus String               @default("Draft") // 'Draft', 'Submitted', 'Under_Review', 'Reupload_Required', 'Approved', 'Rejected', 'Suspended'
+  reuploadRemarks    String?
+  
+  // KYC Documents
+  aadhaarUrl         String?
+  panUrl             String?
+  selfieUrl          String?
+  
+  // Vehicle Info
+  vehicleType        String?              // 'Bike', 'Scooter', 'Cycle'
+  vehicleNumber      String?
+  rcUrl              String?
+  dlUrl              String?
+  
+  // Bank Details
+  accountNumber      String?
+  ifsc               String?
+  upiId              String?
+  
+  // Emergency Contact
+  emergencyName      String?
+  emergencyPhone     String?
+  
+  // Real-time Status & Telemetry
+  rating             Float                @default(5.0)
+  deliveriesCount    Int                  @default(0)
+  trustScore         Int                  @default(100)
+  isOnline           Boolean              @default(false)
+  latitude           Float?
+  longitude          Float?
+  
+  // Financial Wallet & Balances
+  walletBalance      Float                @default(0.0)
+  earnings           Float                @default(0.0)
+  incentives         Float                @default(0.0)
+  
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  assignments        DeliveryAssignment[]
+  earningsLogs       EarningLog[]
+  wallets            Wallet[]
+}
+
+model DeliveryAssignment {
+  id               String           @id @default(uuid())
+  orderId          String           @unique
+  partnerId        String
+  status           String           @default("Assigned") // 'Assigned', 'Accepted', 'PickedUp', 'Delivered', 'Cancelled'
+  
+  assignedAt       DateTime         @default(now())
+  acceptedAt       DateTime?
+  pickedUpAt       DateTime?
+  deliveredAt      DateTime?
+  cancelledAt      DateTime?
+  
+  partner          DeliveryPartner  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  order            Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model EarningLog {
+  id               String           @id @default(uuid())
+  partnerId        String
+  orderId          String
+  amount           Float
+  type             String           @default("DeliveryFee") // 'DeliveryFee', 'Incentive', 'Bonus'
+  createdAt        DateTime         @default(now())
+  
+  partner          DeliveryPartner  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+}
+
+// --- MULTI-VENDOR MANAGEMENT ---
+
+model Vendor {
+  id                 String   @id @default(uuid())
+  name               String
+  ownerName          String
+  phone              String   @unique
+  email              String   @unique
+  password           String
+  role               String   @default("VENDOR")
+  verificationStatus String   @default("Approved") // 'Draft', 'Submitted', 'Under_Review', 'Approved', 'Rejected', 'Suspended'
+  reuploadRemarks    String?
+  kycDocUrl          String?
+  storeCapacity      Int      @default(100)
+  operatingHours     String   @default("08:00 AM - 09:00 PM")
+  commissionRate     Float    @default(8.0)
+  latitude           Float?
+  longitude          Float?
+  active             Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  products           Product[]
+  orders             Order[]
+  wallets            Wallet[]
+}
+
+// --- WALLET ECOSYSTEM ---
+
+model Wallet {
+  id           String              @id @default(uuid())
+  userId       String?
+  partnerId    String?
+  vendorId     String?
+  type         String              // 'CUSTOMER', 'CASHBACK', 'PROMOTIONAL', 'REFUND', 'VENDOR', 'RIDER'
+  balance      Float               @default(0.0)
+  status       String              @default("ACTIVE") // 'ACTIVE', 'FROZEN'
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  
+  user         User?               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  partner      DeliveryPartner?    @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  vendor       Vendor?             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  transactions WalletTransaction[]
+}
+
+model WalletTransaction {
+  id          String   @id @default(uuid())
+  walletId    String
+  amount      Float
+  type        String   // 'CREDIT', 'DEBIT'
+  description String
+  referenceId String?  // e.g. orderId, rechargeId
+  status      String   @default("SUCCESS") // 'SUCCESS', 'PENDING', 'FAILED'
+  createdAt   DateTime @default(now())
+
+  wallet      Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+}
+
+// --- LIVE ORDER STATUS HISTORY ---
+
+model OrderStatusHistory {
+  id          String   @id @default(uuid())
+  orderId     String
+  status      String
+  timestamp   DateTime @default(now())
+  notes       String?
+  updatedBy   String?
+
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+// --- CAPACITY ENGINE ---
+
+model CapacityConfig {
+  id                 String   @id @default("default")
+  radius             Float    @default(10.0)
+  peakHourMultiplier Float    @default(1.0)
+  emergencyPause     Boolean  @default(false)
+  autoScaling        Boolean  @default(true)
+  weatherMultiplier  Float    @default(1.0)
+  storeLoadThreshold Int      @default(50)
+  updatedAt          DateTime @updatedAt
+}
+
+// --- CUSTOMER SUPPORT & TICKETS ---
+
+model SupportTicket {
+  id        String   @id @default(uuid())
+  userId    String
+  subject   String
+  message   String
+  status    String   @default("OPEN") // 'OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'
+  reply     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// --- SECURITY AUDIT LOGS ---
+
+model AuditLog {
+  id            String   @id @default(uuid())
+  userId        String?
+  actorRole     String?
+  action        String
+  entityName    String?
+  entityId      String?
+  details       String?  // JSON string
+  ipAddress     String?
+  deviceDetails String?
+  createdAt     DateTime @default(now())
+}
