@@ -1,0 +1,16 @@
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# local env files
+.env
+.env*.local
+
+# generated native folders
+/ios
+/android
